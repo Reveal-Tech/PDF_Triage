@@ -47,6 +47,9 @@ def extract_pdf_statistics(pdf_path, output_dir, image_format='tiff'):
         page_stats["Total Pages"] = total_pages
         page_stats["File Size (KB)"] = os.path.getsize(output_path) / 1024
         
+        # Extract text from the page
+        page_stats["Page Text"] = extract_page_text(page)
+        
         # Extract largest image if available
         if page_stats["Raster Count"] > 0:
             img_filename = f"{base_filename}_{page_num}_of_{total_pages}_largest_image{ext}"
@@ -60,6 +63,17 @@ def extract_pdf_statistics(pdf_path, output_dir, image_format='tiff'):
     
     pdf_document.close()
     return stats_data
+
+def extract_page_text(page):
+    """Extract all text from a PDF page."""
+    try:
+        text = page.get_text()
+        # Clean up the text - remove excessive whitespace, normalize line breaks
+        text = ' '.join(text.split())
+        return text
+    except Exception as e:
+        print(f"Warning: Failed to extract text: {e}")
+        return ""
 
 def get_page_statistics(page, pdf_document, page_index):
     """Get statistics for a specific page including vector objects and colors."""
@@ -191,7 +205,16 @@ def process_all_pdfs(input_dir, output_dir, image_format):
     if all_stats:
         stats_df = pd.DataFrame(all_stats)
         csv_path = os.path.join(output_dir, "pdf_statistics.csv")
-        stats_df.to_csv(csv_path, index=False)
+        
+        # Check for extremely large text that might cause issues in CSV
+        if "Page Text" in stats_df.columns:
+            # Truncate extremely long text to avoid CSV issues
+            max_text_length = 32000  # Excel has ~32K character limit per cell
+            stats_df["Page Text"] = stats_df["Page Text"].apply(
+                lambda x: (x[:max_text_length] + "...") if len(x) > max_text_length else x
+            )
+        
+        stats_df.to_csv(csv_path, index=False, encoding='utf-8')
         print(f"Statistics saved to {csv_path}")
         print(f"Processed {len(pdf_files)} PDF files with a total of {len(all_stats)} pages")
     else:
